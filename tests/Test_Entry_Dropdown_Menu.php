@@ -29,6 +29,22 @@ class Test_Entry_Dropdown_Menu extends TestCase {
 		$this->plugin = new Post_Collection();
 	}
 
+	public function test_friends_keeps_saving_without_collection_views() {
+		$this->assertSame(
+			array( 'friend_post_cache' ),
+			apply_filters( 'friends_frontend_post_types', array( 'friend_post_cache' ) )
+		);
+		$collection_user = $this->create_user( 503, 'collection', 'Collection', array( 'post_collection' ) );
+		$this->assertSame( 'friend_post_cache', apply_filters( 'friends_author_post_type', 'friend_post_cache', $collection_user ) );
+		$this->create_collection_term( 207, 'collection', 'Collection' );
+		update_term_meta( 207, 'friends_publish_post_collection', true );
+		$this->assertFalse( apply_filters( 'friends_friend_feed_viewable', false, 'collection' ) );
+		$this->assertFalse( apply_filters( 'friends_friend_posts_query_viewable', false, 'collection' ) );
+		$this->assertArrayNotHasKey( 'friends_widget_friend_list_after', $GLOBALS['wp_test_actions'] );
+		$this->assertArrayHasKey( 'friends_entry_dropdown_menu', $GLOBALS['wp_test_actions'] );
+		$this->assertArrayHasKey( 'friends_browser_extension_actions', $GLOBALS['wp_test_filters'] );
+	}
+
 	public function test_normal_friend_item_shows_collection_moves_without_collection_management_controls() {
 		$post = $this->create_post(
 			101,
