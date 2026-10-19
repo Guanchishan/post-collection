@@ -286,6 +286,8 @@ class Post_Collection {
 		add_action( 'friends_widget_friend_list_after', array( $this, 'friends_widget_friend_list_after' ), 10, 2 );
 		add_action( 'friends_author_header', array( $this, 'friends_author_header' ) );
 		add_action( 'friends_author_header', array( $this, 'enter_url_field' ) );
+		add_filter( 'send_to_e_reader_post_url', array( $this, 'filter_e_reader_post_url' ), 10, 2 );
+		add_filter( 'send_to_e_reader_post_author_name', array( $this, 'filter_e_reader_post_author_name' ), 10, 2 );
 		add_action( 'friends_post_footer_first', array( $this, 'share_button' ) );
 		add_action( 'friends_feed_table_header', array( $this, 'feed_table_header' ) );
 		add_action( 'friends_feed_table_row', array( $this, 'feed_table_row' ), 10, 2 );
@@ -3480,6 +3482,40 @@ class Post_Collection {
 		$host = wp_parse_url( $post->guid, PHP_URL_HOST );
 
 		return sanitize_text_field( preg_replace( '#^www\.#', '', preg_replace( '#[^a-z0-9.-]+#i', ' ', strtolower( $host ) ) ) );
+	}
+
+	/**
+	 * Use the original collected article URL in e-reader chapter footers.
+	 *
+	 * @param string   $url  Current chapter URL.
+	 * @param \WP_Post $post The exported post.
+	 * @return string
+	 */
+	public function filter_e_reader_post_url( $url, \WP_Post $post ) {
+		if ( self::CPT === $post->post_type ) {
+			$source_url = $this->get_post_source_url( $post );
+			if ( $source_url ) {
+				return $source_url;
+			}
+		}
+		return $url;
+	}
+
+	/**
+	 * Use the stored article author in e-reader chapter bylines.
+	 *
+	 * @param string   $author Current chapter author.
+	 * @param \WP_Post $post   The exported post.
+	 * @return string
+	 */
+	public function filter_e_reader_post_author_name( $author, \WP_Post $post ) {
+		if ( self::CPT === $post->post_type ) {
+			$stored_author = get_post_meta( $post->ID, 'author', true );
+			if ( $stored_author ) {
+				return $stored_author;
+			}
+		}
+		return $author;
 	}
 
 	/**

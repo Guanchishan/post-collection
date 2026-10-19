@@ -92,6 +92,21 @@ class Test_App_E_Reader_Hooks extends TestCase {
 		$app->get_post_collection()->get_article_notes()->save_note( $post->ID, $status );
 	}
 
+	public function test_e_reader_metadata_uses_original_article_and_leaves_other_posts_alone() {
+		$plugin = new Post_Collection_E_Reader_Test_Plugin();
+		$collection = $this->create_collection( 'Reading List' );
+		$post = $this->create_article( 'Article', $collection );
+		$post->guid = 'https://original.example/article/';
+		update_post_meta( $post->ID, 'author', 'Alexander Aidun' );
+		$this->assertSame( $post->guid, $plugin->filter_e_reader_post_url( 'https://local.example/', $post ) );
+		$this->assertSame( 'Alexander Aidun', $plugin->filter_e_reader_post_author_name( 'Owner', $post ) );
+		update_post_meta( $post->ID, 'url', 'https://canonical.example/article/' );
+		$this->assertSame( 'https://canonical.example/article/', $plugin->filter_e_reader_post_url( 'https://local.example/', $post ) );
+		$post->post_type = 'post';
+		$this->assertSame( 'https://local.example/', $plugin->filter_e_reader_post_url( 'https://local.example/', $post ) );
+		$this->assertSame( 'Owner', $plugin->filter_e_reader_post_author_name( 'Owner', $post ) );
+	}
+
 	public function test_unread_posts_leave_out_what_has_been_read() {
 		$GLOBALS['wp_test_current_user_caps'] = array( 'edit_private_posts' => true );
 
