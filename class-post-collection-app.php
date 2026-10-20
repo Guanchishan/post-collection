@@ -2085,6 +2085,16 @@ class Post_Collection_App {
 	}
 
 	/**
+	 * Get the original article author for display in the app.
+	 *
+	 * @param \WP_Post $post The collected post.
+	 * @return string The stored article author, or an empty string.
+	 */
+	public function get_post_display_author( \WP_Post $post ) {
+		return $this->post_collection->filter_e_reader_post_author_name( '', $post );
+	}
+
+	/**
 	 * Get display metadata for a collected post date.
 	 *
 	 * The collection stays sorted by the saved post date. When the original

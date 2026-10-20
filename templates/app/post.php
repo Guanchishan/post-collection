@@ -32,6 +32,7 @@ $embed_html       = $app->get_post_description_embed_html( $post, 'detail' );
 $terms            = $app->get_post_terms( $post );
 $word_count_label = $app->get_post_word_count_label( $post );
 $read_time_label  = $app->get_post_read_time_label( $post );
+$display_author   = $app->get_post_display_author( $post );
 $display_date     = $app->get_post_display_date( $post );
 $can_edit_notes   = current_user_can( 'edit_posts' );
 $note             = $can_edit_notes ? $app->get_post_collection()->get_article_notes()->get_note( $post->ID ) : null;
@@ -61,6 +62,9 @@ $back_label       = 'bookmarks' === $mode ? __( 'Back to Bookmarks', 'post-colle
 		<p class="pc-source"><?php echo esc_html( $host ); ?></p>
 		<h1><?php echo esc_html( get_the_title( $post ) ); ?></h1>
 		<div class="pc-detail-meta">
+			<?php if ( $display_author ) : ?>
+				<span class="pc-article-author"><?php echo esc_html( $display_author ); ?></span>
+			<?php endif; ?>
 			<time class="<?php echo $display_date['is_original'] ? 'pc-original-date' : ''; ?>" datetime="<?php echo esc_attr( $display_date['datetime'] ); ?>"<?php echo $display_date['title'] ? ' title="' . esc_attr( $display_date['title'] ) . '"' : ''; ?>><?php echo esc_html( $display_date['label'] ); ?></time>
 			<span class="pc-reading-meta"><?php echo esc_html( $word_count_label ); ?></span>
 			<span class="pc-reading-meta"><?php echo esc_html( $read_time_label ); ?></span>

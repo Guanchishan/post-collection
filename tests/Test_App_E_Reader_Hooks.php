@@ -107,6 +107,16 @@ class Test_App_E_Reader_Hooks extends TestCase {
 		$this->assertSame( 'Owner', $plugin->filter_e_reader_post_author_name( 'Owner', $post ) );
 	}
 
+	public function test_display_author_uses_the_stored_article_author() {
+		$app = $this->get_app();
+		$collection = $this->create_collection( 'Reading List' );
+		$post = $this->create_article( 'Article', $collection );
+
+		$this->assertSame( '', $app->get_post_display_author( $post ) );
+		update_post_meta( $post->ID, 'author', 'Alexander Aidun' );
+		$this->assertSame( 'Alexander Aidun', $app->get_post_display_author( $post ) );
+	}
+
 	public function test_unread_posts_leave_out_what_has_been_read() {
 		$GLOBALS['wp_test_current_user_caps'] = array( 'edit_private_posts' => true );
 
