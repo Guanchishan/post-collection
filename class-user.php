@@ -72,33 +72,19 @@ class User extends \WP_User {
 	}
 
 	/**
-	 * Get the local friends page URL for this user.
+	 * Get the Post Collection app URL for this user.
 	 *
 	 * @param int|null $post_id Optional post ID to link to.
 	 * @return string The URL.
 	 */
 	public function get_local_friends_page_url( $post_id = null ) {
-		if ( ! class_exists( 'Friends\Friends' ) ) {
-			if ( class_exists( __NAMESPACE__ . '\Post_Collection_App' ) && Post_Collection_App::instance() ) {
-				return Post_Collection_App::instance()->get_collection_url( $this, $post_id );
-			}
-			if ( $post_id && ! is_wp_error( $post_id ) ) {
-				return get_permalink( $post_id );
-			}
-			return home_url();
+		if ( class_exists( __NAMESPACE__ . '\\Post_Collection_App' ) && Post_Collection_App::instance() ) {
+			return Post_Collection_App::instance()->get_collection_url( $this, $post_id );
 		}
-
-		$path = '/';
 		if ( $post_id && ! is_wp_error( $post_id ) ) {
-			$path = '/' . $post_id . '/';
+			return get_permalink( $post_id );
 		}
-
-		$user_login = $this->get_user_login_for_url( $this->user_login );
-		if ( ! $user_login || is_wp_error( $user_login ) ) {
-			return home_url( '/friends/' . $path );
-		}
-
-		return home_url( '/friends/' . $user_login . $path );
+		return home_url( '/post-collection/' );
 	}
 
 	/**
