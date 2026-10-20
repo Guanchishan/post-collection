@@ -41,7 +41,7 @@ Collected posts live in their own custom post type and are grouped by a Post Col
 
 ### Works with other plugins
 
-Post Collection runs standalone, but it also integrates with the [Friends](https://wordpress.org/plugins/friends/) plugin: when Friends is active, every post in your feed gets a "Save to Post Collection" entry in its dropdown menu, and notes are shown underneath the post on the Friends frontend.
+Post Collection runs standalone, but it also integrates with the [Friends](https://wordpress.org/plugins/friends/) plugin: when Friends is active, every post in your feed gets a "Save to Post Collection" entry in its dropdown menu, Saved articles are read and managed in the Post Collection app.
 
 With the [Send to E-Reader](https://wordpress.org/plugins/send-to-e-reader/) plugin the app grows e-reader actions: an article in a collection gets a *Download ePub* entry (and one per configured device), and items can be ticked off in a collection or in the review queue and sent as one multi-chapter ePub. There is also a download URL an e-reader's own browser can open to pull the unread articles across without any clicking on the site; it is shown on the Send to E-Reader settings screen.
 
@@ -59,7 +59,7 @@ The plugin also registers WordPress Abilities (listing, creating and updating co
 
 ### Do I need the Friends plugin?
 
-No. Since version 2.0.0 Post Collection is a standalone plugin. If the Friends plugin happens to be installed, the two integrate: you can save posts from your feed into a collection and see your notes on the Friends frontend.
+No. Since version 2.0.0 Post Collection is a standalone plugin. If the Friends plugin happens to be installed, the two integrate: you can send articles from your feed to a collection, then read them and manage your notes in the Post Collection app.
 
 ### Does this plugin create custom database tables?
 

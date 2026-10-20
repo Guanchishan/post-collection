@@ -265,27 +265,16 @@ class Post_Collection {
 			add_action( 'init', array( $this, 'register_custom_post_type' ) );
 			add_action( 'init', array( $this, 'add_revision_support' ) );
 		}
-		add_filter( 'friends_author_post_type', array( $this, 'filter_author_post_type' ), 10, 2 );
-		add_filter( 'friends_frontend_post_types', array( $this, 'add_frontend_post_types' ) );
-		add_action( 'pre_get_posts', array( $this, 'filter_collection_friend_posts_query' ), 20 );
 		add_action( 'tool_box', array( $this, 'toolbox_bookmarklet' ) );
 		add_filter( 'user_row_actions', array( $this, 'user_row_actions' ), 10, 2 );
 		add_action( 'admin_bar_menu', array( $this, 'admin_bar_new_content' ), 72 );
 		add_action( 'enqueue_block_editor_assets', array( $this, 'enqueue_block_editor_assets' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ), 99999 );
 		add_action( 'wp_loaded', array( $this, 'save_url_endpoint' ), 100 );
-		add_action( 'friend_post_edit_link', array( $this, 'allow_post_editing' ), 10, 2 );
-		add_action( 'friends_show_author_edit', array( $this, 'friends_show_author_edit' ), 10, 2 );
 		add_action( 'friends_entry_dropdown_menu', array( $this, 'entry_dropdown_menu' ), 10, 2 );
-		add_action( 'friends_friend_feed_viewable', array( $this, 'friends_friend_feed_viewable' ), 10, 2 );
-		add_filter( 'friends_friend_posts_query_viewable', array( $this, 'collection_friend_posts_query_viewable' ), 10, 2 );
 		add_action( 'friend_user_role_name', array( $this, 'friend_user_role_name' ), 10, 2 );
 		add_filter( 'friends_plugin_roles', array( $this, 'associate_friend_user_role' ) );
-		add_action( 'friends_override_author_name', array( $this, 'friends_override_author_name' ), 15, 3 );
 		add_filter( 'send_to_e_reader_ebook_author', array( $this, 'filter_ebook_author' ), 10, 2 );
-		add_action( 'friends_widget_friend_list_after', array( $this, 'friends_widget_friend_list_after' ), 10, 2 );
-		add_action( 'friends_author_header', array( $this, 'friends_author_header' ) );
-		add_action( 'friends_author_header', array( $this, 'enter_url_field' ) );
 		add_filter( 'send_to_e_reader_post_url', array( $this, 'filter_e_reader_post_url' ), 10, 2 );
 		add_filter( 'send_to_e_reader_post_author_name', array( $this, 'filter_e_reader_post_author_name' ), 10, 2 );
 		add_action( 'friends_post_footer_first', array( $this, 'share_button' ) );
@@ -394,107 +383,6 @@ class Post_Collection {
 	}
 
 	/**
-	 * Filter the post type when querying by a post_collection author.
-	 *
-	 * @param string|array $post_type The current post type(s).
-	 * @param User         $user      The author being queried.
-	 * @return string|array The filtered post type(s).
-	 */
-	public function filter_author_post_type( $post_type, $user ) {
-		if ( $user->has_cap( 'post_collection' ) ) {
-			return self::CPT;
-		}
-		return $post_type;
-	}
-
-	/**
-	 * Get the collection term addressed by a /friends/{collection}/ query.
-	 *
-	 * @param \WP_Query|null $query Optional query object.
-	 * @return \WP_Term|null Collection term, if the query targets one.
-	 */
-	private function get_collection_term_from_friends_query( $query = null ) {
-		if ( $query instanceof \WP_Query ) {
-			$pagename = isset( $query->query['pagename'] ) ? $query->query['pagename'] : $query->get( 'pagename' );
-			if ( ! $pagename ) {
-				$pagename = isset( $query->query['category_name'] ) ? $query->query['category_name'] : $query->get( 'category_name' );
-			}
-			if ( ! $pagename ) {
-				$pagename = isset( $query->query['name'] ) ? $query->query['name'] : $query->get( 'name' );
-			}
-		} else {
-			$pagename = get_query_var( 'pagename' );
-			if ( ! $pagename ) {
-				$pagename = get_query_var( 'category_name' );
-			}
-			if ( ! $pagename ) {
-				$pagename = get_query_var( 'name' );
-			}
-		}
-
-		$pagename_parts = explode( '/', trim( (string) $pagename, '/' ) );
-		if ( 'friends' !== array_shift( $pagename_parts ) || empty( $pagename_parts[0] ) ) {
-			return null;
-		}
-
-		$collection = get_term_by( 'slug', sanitize_title( $pagename_parts[0] ), self::COLLECTION_TAXONOMY );
-		if ( ! $collection || is_wp_error( $collection ) ) {
-			return null;
-		}
-
-		return $collection;
-	}
-
-	/**
-	 * Query migrated collection URLs by collection term instead of old author users.
-	 *
-	 * @param \WP_Query $query The main query.
-	 */
-	public function filter_collection_friend_posts_query( \WP_Query $query ) {
-		global $wp_query;
-
-		if ( $wp_query !== $query || $query->is_admin() || $query->is_home() ) {
-			return;
-		}
-
-		$collection = $this->get_collection_term_from_friends_query( $query );
-		if ( ! $collection ) {
-			return;
-		}
-
-		$tax_query = $query->get( 'tax_query' );
-		if ( ! is_array( $tax_query ) ) {
-			$tax_query = array();
-		}
-		if ( $tax_query ) {
-			$tax_query['relation'] = 'AND';
-		}
-		$tax_query[] = array(
-			'taxonomy' => self::COLLECTION_TAXONOMY,
-			'field'    => 'term_id',
-			'terms'    => array( (int) $collection->term_id ),
-		);
-
-		$query->set( 'author', '' );
-		$query->set( 'author_name', '' );
-		$query->set( 'post_type', self::CPT );
-		$query->set( 'tax_query', $tax_query );
-		$query->is_author = true;
-	}
-
-	/**
-	 * Add post_collection CPT to the Friends frontend post types.
-	 *
-	 * This is for backward compatibility with older versions of the Friends plugin.
-	 *
-	 * @param array $post_types The incoming post types.
-	 * @return array The frontend post types.
-	 */
-	public function add_frontend_post_types( $post_types ) {
-		return array_merge( array( self::CPT ), $post_types );
-	}
-
-	/**
 	 * Get the Friends\Template_Loader singleton
 	 *
 	 * @return Friends\Template_Loader A class instance.
@@ -506,31 +394,6 @@ class Post_Collection {
 			$template_loader = new Post_Collection_Template_Loader();
 		}
 		return $template_loader;
-	}
-
-	public function allow_post_editing( $link, $original ) {
-		if ( $this->is_post_collection_user( get_the_author_meta( 'ID' ) ) ) {
-			return $original;
-		}
-		return $link;
-	}
-
-	public function friends_show_author_edit( $show, $friend_user ) {
-		static $cache = array();
-		if ( isset( $cache[ $friend_user->ID ] ) ) {
-			if ( $cache[ $friend_user->ID ] ) {
-				return $show;
-			}
-			return false;
-		}
-
-		if ( $friend_user->has_cap( 'post_collection' ) ) {
-			$cache[ $friend_user->ID ] = false;
-			return false;
-		}
-
-		$cache[ $friend_user->ID ] = true;
-		return $show;
 	}
 
 	public function entry_dropdown_menu( $post = null, $friend_user = null ) {
@@ -3457,34 +3320,6 @@ class Post_Collection {
 	}
 
 	/**
-	 * Potentially override the post author name with metadata.
-	 *
-	 * @param      string $overridden_author_name  The already overridden author name.
-	 * @param      string $author_name  The author name.
-	 * @param      int    $post_id      The post id.
-	 *
-	 * @return     string  The modified author name.
-	 */
-	public function friends_override_author_name( $overridden_author_name, $author_name, $post_id ) {
-		if ( $overridden_author_name && $overridden_author_name !== $author_name ) {
-			return $overridden_author_name;
-		}
-		$post = get_post( $post_id );
-		$author = new \WP_User( $post->post_author );
-		if ( is_wp_error( $author ) ) {
-			return $author_name;
-		}
-
-		if ( ! $author->has_cap( 'post_collection' ) ) {
-			return $author_name;
-		}
-
-		$host = wp_parse_url( $post->guid, PHP_URL_HOST );
-
-		return sanitize_text_field( preg_replace( '#^www\.#', '', preg_replace( '#[^a-z0-9.-]+#i', ' ', strtolower( $host ) ) ) );
-	}
-
-	/**
 	 * Use the original collected article URL in e-reader chapter footers.
 	 *
 	 * @param string   $url  Current chapter URL.
@@ -3554,80 +3389,6 @@ class Post_Collection {
 		return $author;
 	}
 
-	/**
-	 * Expose the feed for the specific user.
-	 *
-	 * @param      bool   $viewable      Whether it's viewable.
-	 * @param      string $author_login  The author login.
-	 *
-	 * @return     bool    Whether it's viewable.
-	 */
-	function friends_friend_feed_viewable( $viewable, $author_login ) {
-		$collection = get_term_by( 'slug', sanitize_title( $author_login ), self::COLLECTION_TAXONOMY );
-		if ( $collection && ! is_wp_error( $collection ) && get_term_meta( $collection->term_id, 'friends_publish_post_collection', true ) ) {
-			add_filter( 'pre_option_rss_use_excerpt', '__return_true', 30 );
-			return true;
-		}
-		return $viewable;
-	}
-
-	/**
-	 * Expose public collection front pages by collection term.
-	 *
-	 * @param bool   $viewable     Whether the Friends page is viewable.
-	 * @param string $author_login The first path segment after /friends/.
-	 * @return bool Whether it is viewable.
-	 */
-	public function collection_friend_posts_query_viewable( $viewable, $author_login ) {
-		$collection = get_term_by( 'slug', sanitize_title( $author_login ), self::COLLECTION_TAXONOMY );
-		if ( $collection && ! is_wp_error( $collection ) && get_term_meta( $collection->term_id, 'friends_publish_post_collection', true ) ) {
-			return true;
-		}
-
-		return $viewable;
-	}
-
-	/**
-	 * Amend the Friends List widget
-	 *
-	 * @param object $widget  The widget.
-	 * @param array  $args Sidebar arguments.
-	 */
-	public function friends_widget_friend_list_after( $widget, $args ) {
-		$post_collections = $this->get_post_collection_users();
-		if ( 0 !== $post_collections->get_total() ) {
-			?>
-			<details class="accordion" open>
-				<summary class="accordion-header">
-					<?php
-					echo wp_kses_post( $args['before_title'] );
-					echo esc_html( _ex( 'Post Collections', 'widget-header', 'post-collection' ) );
-					echo wp_kses_post( $args['after_title'] );
-					?>
-				</summary>
-				<ul class="subscriptions-list menu menu-nav accordion-body">
-					<?php
-					$widget->get_list_items( $post_collections->get_results() );
-					?>
-				</ul>
-			</details>
-			<?php
-		}
-	}
-
-	/**
-	 * Amend the Friends author header.
-	 *
-	 * @param      \WP_User $user   The user.
-	 */
-	public function friends_author_header( $user ) {
-		if ( $user->has_cap( 'post_collection' ) ) {
-			?>
-			<a class="chip" href="<?php echo esc_attr( get_edit_user_link( $user->ID ) ); ?>"><?php /* phpcs:ignore WordPress.WP.I18n.MissingArgDomain */ esc_html_e( 'Edit' ); ?></a>
-			<?php
-		}
-	}
-
 	public function share_button() {
 		$this->template_loader()->get_template_part(
 			'frontend/share',
@@ -3636,18 +3397,6 @@ class Post_Collection {
 				'post-collections' => $this->get_post_collection_users()->get_results(),
 			)
 		);
-	}
-
-	public function enter_url_field( $user ) {
-		if ( $user->has_cap( 'post_collection' ) ) {
-			$this->template_loader()->get_template_part(
-				'frontend/enter-url',
-				null,
-				array(
-					'friend_user' => $user,
-				)
-			);
-		}
 	}
 
 	public function feed_table_header() {
