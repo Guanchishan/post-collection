@@ -286,6 +286,8 @@ class Post_Collection {
 		add_filter( 'friends_can_update_modified_feed_posts', array( $this, 'can_update_modified_feed_posts' ), 10, 5 );
 		add_action( 'friends_after_register_feed_taxonomy', array( $this, 'after_register_feed_taxonomy' ) );
 		add_filter( 'my_apps_plugins', array( $this, 'my_apps_plugins' ) );
+		add_action( 'admin_init', array( $this, 'register_launcher_settings' ) );
+		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'wp_ajax_post-collection-mark-publish', array( $this, 'wp_ajax_mark_publish' ) );
 		add_action( 'wp_ajax_post-collection-mark-private', array( $this, 'wp_ajax_mark_private' ) );
 		add_action( 'wp_ajax_post-collection-change-author', array( $this, 'wp_ajax_change_author' ) );
@@ -3287,27 +3289,73 @@ class Post_Collection {
 	}
 
 	/**
+	 * Register the site-wide collection launcher preference.
+	 */
+	public function register_launcher_settings() {
+		register_setting(
+			'post_collection_settings',
+			'post_collection_my_apps_collections',
+			array(
+				'type'              => 'boolean',
+				'default'           => false,
+				'sanitize_callback' => 'rest_sanitize_boolean',
+			)
+		);
+	}
+
+	/**
+	 * Add the plugin settings under Collected Posts.
+	 */
+	public function add_settings_page() {
+		add_submenu_page(
+			'edit.php?post_type=' . self::CPT,
+			__( 'Post Collection Settings', 'post-collection' ),
+			__( 'Settings', 'post-collection' ),
+			'manage_options',
+			'post-collection-settings',
+			array( $this, 'render_settings_page' )
+		);
+	}
+
+	/**
+	 * Render the collection launcher setting.
+	 */
+	public function render_settings_page() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		?>
+		<div class="wrap">
+			<h1><?php esc_html_e( 'Post Collection Settings', 'post-collection' ); ?></h1>
+			<form method="post" action="options.php">
+				<?php settings_fields( 'post_collection_settings' ); ?>
+				<input type="hidden" name="post_collection_my_apps_collections" value="0">
+				<p><label>
+					<input type="checkbox" name="post_collection_my_apps_collections" value="1" <?php checked( (bool) get_option( 'post_collection_my_apps_collections', false ) ); ?>>
+					<?php esc_html_e( 'Automatically add collections as icons in My Apps', 'post-collection' ); ?>
+				</label></p>
+				<?php submit_button(); ?>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
 	 * Register post collections as My Apps launcher entries.
 	 *
 	 * @param array $apps The registered My Apps entries.
 	 * @return array The filtered My Apps entries.
 	 */
 	public function my_apps_plugins( $apps ) {
-		if ( current_user_can( $this->get_required_role() ) ) {
-			$apps['post-collection-configure'] = array(
-				'name'            => __( 'Configure Post Collections', 'post-collection' ),
-				'url'             => home_url( '/post-collection/' ),
-				'dashicon'        => 'dashicons-admin-settings',
-				'icon_background' => 'linear-gradient(135deg, #64748b, #334155)',
-				'icon_color'      => '#fff',
-				'icon_shadow'     => true,
-			);
+		// WpApp registers the main launcher entry. Collection shortcuts are opt-in.
+		if ( ! get_option( 'post_collection_my_apps_collections', false ) || ! current_user_can( $this->get_required_role() ) ) {
+			return $apps;
 		}
 
-		foreach ( $this->get_post_collection_users()->get_results() as $user ) {
-			$apps[ 'post-collection-' . $user->ID ] = array(
-				'name'            => $user->display_name,
-				'url'             => $user->get_local_friends_page_url(),
+		foreach ( $this->get_post_collection_terms() as $collection ) {
+			$apps[ 'post-collection-term-' . $collection->term_id ] = array(
+				'name'            => $collection->name,
+				'url'             => home_url( '/post-collection/' . rawurlencode( $collection->slug ) . '/' ),
 				// Same tile as the WordPress/blueprints catalog entry.
 				'dashicon'        => 'dashicons-book',
 				'icon_background' => 'linear-gradient(135deg, #614385, #516395)',

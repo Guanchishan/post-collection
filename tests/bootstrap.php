@@ -1024,6 +1024,11 @@ namespace {
 		);
 	}
 
+	function get_option( $option, $default = false ) {
+		$defaults = array( 'date_format' => 'F j, Y', 'blog_charset' => 'UTF-8' );
+		return $GLOBALS['wp_test_options'][ $option ] ?? $defaults[ $option ] ?? $default;
+	}
+
 	function home_url( $path = '', $scheme = null ) {
 		return 'https://example.com' . $path;
 	}
