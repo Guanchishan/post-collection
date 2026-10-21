@@ -275,6 +275,8 @@ class Post_Collection {
 		add_action( 'friend_user_role_name', array( $this, 'friend_user_role_name' ), 10, 2 );
 		add_filter( 'friends_plugin_roles', array( $this, 'associate_friend_user_role' ) );
 		add_filter( 'send_to_e_reader_ebook_author', array( $this, 'filter_ebook_author' ), 10, 2 );
+		add_filter( 'send_to_e_reader_post_url', array( $this, 'filter_e_reader_post_url' ), 10, 2 );
+		add_filter( 'send_to_e_reader_post_author_name', array( $this, 'filter_e_reader_post_author_name' ), 10, 2 );
 		add_action( 'friends_post_footer_first', array( $this, 'share_button' ) );
 		add_action( 'friends_feed_table_header', array( $this, 'feed_table_header' ) );
 		add_action( 'friends_feed_table_row', array( $this, 'feed_table_row' ), 10, 2 );
@@ -3315,6 +3317,40 @@ class Post_Collection {
 		}
 
 		return $apps;
+	}
+
+	/**
+	 * Use the original collected article URL in e-reader chapter footers.
+	 *
+	 * @param string   $url  Current chapter URL.
+	 * @param \WP_Post $post The exported post.
+	 * @return string
+	 */
+	public function filter_e_reader_post_url( $url, \WP_Post $post ) {
+		if ( self::CPT === $post->post_type ) {
+			$source_url = $this->get_post_source_url( $post );
+			if ( $source_url ) {
+				return $source_url;
+			}
+		}
+		return $url;
+	}
+
+	/**
+	 * Use the stored article author in e-reader chapter bylines.
+	 *
+	 * @param string   $author Current chapter author.
+	 * @param \WP_Post $post   The exported post.
+	 * @return string
+	 */
+	public function filter_e_reader_post_author_name( $author, \WP_Post $post ) {
+		if ( self::CPT === $post->post_type ) {
+			$stored_author = get_post_meta( $post->ID, 'author', true );
+			if ( $stored_author ) {
+				return $stored_author;
+			}
+		}
+		return $author;
 	}
 
 	/**

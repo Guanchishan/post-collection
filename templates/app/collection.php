@@ -216,6 +216,7 @@ if ( '' !== $active_tag ) {
 					$read_status      = $app->get_article_note_status( $post );
 					$word_count_label = $app->get_post_word_count_label( $post );
 					$read_time_label  = $app->get_post_read_time_label( $post );
+					$display_author   = $app->get_post_display_author( $post );
 					?>
 					<article class="pc-bookmark-card" data-pc-item="<?php echo esc_attr( $post->ID ); ?>">
 						<?php if ( $embed_html ) : ?>
@@ -236,6 +237,9 @@ if ( '' !== $active_tag ) {
 								<p><?php echo esc_html( $excerpt ); ?></p>
 							<?php endif; ?>
 							<div class="pc-card-actions">
+								<?php if ( $display_author ) : ?>
+									<span class="pc-article-author"><?php echo esc_html( $display_author ); ?></span>
+								<?php endif; ?>
 								<?php $app->render_item_select( $post, 'collection' ); ?>
 								<a href="<?php echo esc_url( $app->get_collection_url( $collection, $post->ID ) ); ?>"><?php esc_html_e( 'Details', 'post-collection' ); ?></a>
 								<span class="pc-reading-meta"><?php echo esc_html( $word_count_label ); ?></span>
@@ -263,6 +267,7 @@ if ( '' !== $active_tag ) {
 					$read_status      = $app->get_article_note_status( $post );
 					$word_count_label = $app->get_post_word_count_label( $post );
 					$read_time_label  = $app->get_post_read_time_label( $post );
+					$display_author   = $app->get_post_display_author( $post );
 					$display_date     = $app->get_post_display_date( $post );
 					$is_editing       = $quick_edit && intval( $post->ID ) === intval( $quick_edit_post_id );
 					$edit_url         = add_query_arg( array( 'pc-view' => 'links', 'pc-edit' => $post->ID ) ) . '#pc-link-' . $post->ID;
@@ -283,6 +288,9 @@ if ( '' !== $active_tag ) {
 							<?php endif; ?>
 						</div>
 						<div class="pc-link-meta">
+							<?php if ( $display_author ) : ?>
+								<span class="pc-article-author"><?php echo esc_html( $display_author ); ?></span>
+							<?php endif; ?>
 							<time class="<?php echo $display_date['is_original'] ? 'pc-original-date' : ''; ?>" datetime="<?php echo esc_attr( $display_date['datetime'] ); ?>"<?php echo $display_date['title'] ? ' title="' . esc_attr( $display_date['title'] ) . '"' : ''; ?>><?php echo esc_html( $display_date['label'] ); ?></time>
 							<span class="pc-reading-meta"><?php echo esc_html( $word_count_label ); ?></span>
 							<span class="pc-reading-meta"><?php echo esc_html( $read_time_label ); ?></span>
@@ -365,6 +373,7 @@ if ( '' !== $active_tag ) {
 					$read_status      = $app->get_article_note_status( $post );
 					$word_count_label = $app->get_post_word_count_label( $post );
 					$read_time_label  = $app->get_post_read_time_label( $post );
+					$display_author   = $app->get_post_display_author( $post );
 					$display_date     = $app->get_post_display_date( $post );
 					?>
 					<article class="pc-post-row<?php echo $image_url || $embed_html ? ' has-image' : ' is-text-only'; ?>" data-pc-item="<?php echo esc_attr( $post->ID ); ?>">
@@ -382,6 +391,9 @@ if ( '' !== $active_tag ) {
 								<p><?php echo esc_html( $excerpt ); ?></p>
 							<?php endif; ?>
 							<div class="pc-row-meta">
+								<?php if ( $display_author ) : ?>
+									<span class="pc-article-author"><?php echo esc_html( $display_author ); ?></span>
+								<?php endif; ?>
 								<?php $app->render_item_select( $post, 'collection' ); ?>
 								<time class="<?php echo $display_date['is_original'] ? 'pc-original-date' : ''; ?>" datetime="<?php echo esc_attr( $display_date['datetime'] ); ?>"<?php echo $display_date['title'] ? ' title="' . esc_attr( $display_date['title'] ) . '"' : ''; ?>><?php echo esc_html( $display_date['label'] ); ?></time>
 								<span class="pc-reading-meta"><?php echo esc_html( $word_count_label ); ?></span>
