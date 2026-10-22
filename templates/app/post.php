@@ -80,6 +80,14 @@ $back_label       = 'bookmarks' === $mode ? __( 'Back to Bookmarks', 'post-colle
 			<a class="pc-button pc-button-primary" href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Open Original', 'post-collection' ); ?></a>
 			<a class="pc-button" href="<?php echo esc_url( $app->get_collection_url( $collection ) ); ?>"><?php echo esc_html( $back_label ); ?></a>
 			<?php $app->render_item_actions( $post, 'detail' ); ?>
+			<?php if ( $app->can_manage_collections() && get_post_meta( $post->ID, \PostCollection\Collection_Transfer::HISTORY, true ) ) : ?>
+				<form method="post">
+					<input type="hidden" name="post_collection_action" value="undo-transfer">
+					<input type="hidden" name="post_id" value="<?php echo esc_attr( $post->ID ); ?>">
+					<?php wp_nonce_field( 'post-collection-undo-' . $post->ID ); ?>
+					<button class="pc-button" type="submit"><?php esc_html_e( 'Undo last move', 'post-collection' ); ?></button>
+				</form>
+			<?php endif; ?>
 		</div>
 		<?php if ( ! empty( $terms ) ) : ?>
 			<nav class="pc-tag-strip pc-detail-tags" aria-label="<?php esc_attr_e( 'Tags', 'post-collection' ); ?>">

@@ -101,6 +101,7 @@ class Post_Collection_App {
 		add_action( 'wp_loaded', array( $this, 'handle_collection_settings' ) );
 		add_action( 'wp_loaded', array( $this, 'handle_delete_collection' ) );
 		add_action( 'wp_loaded', array( $this, 'handle_create_collection' ) );
+		add_action( 'wp_loaded', array( $this, 'handle_restore_transfer' ) );
 		add_action( 'wp_ajax_post_collection_quick_edit', array( $this, 'wp_ajax_quick_edit' ) );
 		add_action( 'wp_ajax_post_collection_parse_import', array( $this, 'wp_ajax_parse_import' ) );
 		add_action( 'wp_ajax_post_collection_import_item', array( $this, 'wp_ajax_import_item' ) );
@@ -436,6 +437,23 @@ class Post_Collection_App {
 	 */
 	public function can_manage_collections() {
 		return current_user_can( $this->post_collection->get_required_role() );
+	}
+
+	/** Restore an article from the standalone app, even after leaving Friends. */
+	public function handle_restore_transfer() {
+		if ( empty( $_POST['post_collection_action'] ) || 'undo-transfer' !== $_POST['post_collection_action'] ) {
+			return;
+		}
+		$id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+		if ( ! $this->can_manage_collections() || ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'post-collection-undo-' . $id ) ) {
+			wp_die( esc_html__( 'The move could not be verified.', 'post-collection' ), '', array( 'response' => 403 ) );
+		}
+		$result = Collection_Transfer::restore( $id );
+		if ( is_wp_error( $result ) ) {
+			wp_die( esc_html( $result->get_error_message() ) );
+		}
+		wp_safe_redirect( home_url( '/' . self::PATH . '/' ) );
+		exit;
 	}
 
 	/**
@@ -1770,6 +1788,9 @@ class Post_Collection_App {
 	 * @return \WP_Post|null
 	 */
 	public function get_visible_post( $post_id, $collection ) {
+		if ( ! $this->can_view_collection( $collection ) ) {
+			return null;
+		}
 		$post = get_post( $post_id );
 
 		if ( ! $post || Post_Collection::CPT !== $post->post_type || ! has_term( $collection->term_id, Post_Collection::COLLECTION_TAXONOMY, $post ) ) {

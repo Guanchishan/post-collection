@@ -46,6 +46,7 @@ jQuery( function ( $ ) {
 			success: function ( response ) {
 				$this.text( response.new_text ).data( 'author', response.old_author );
 			},
+			error: function ( error ) { window.alert( typeof error === 'string' ? error : postCollection.transferError ); },
 			complete: function () {
 				$this.data( 'loading', false );
 			}
@@ -68,10 +69,28 @@ jQuery( function ( $ ) {
 			},
 			success: function ( response ) {
 				$this.text( response.new_text );
+				if ( response.can_undo ) {
+					$this.after( $( '<a href="#" class="post-collection-restore-transfer"></a>' ).attr( 'data-id', response.post_id ).text( postCollection.undo ) );
+				}
 			},
+			error: function ( error ) { window.alert( typeof error === 'string' ? error : postCollection.transferError ); },
 			complete: function () {
 				$this.data( 'loading', false );
 			}
+		} );
+		return false;
+	} );
+	$document.on( 'click', 'a.post-collection-restore-transfer', function () {
+		var $this = $( this );
+		if ( $this.data( 'loading' ) ) {
+			return false;
+		}
+		$this.data( 'loading', true );
+		wp.ajax.send( 'post-collection-restore-transfer', {
+			data: { _ajax_nonce: postCollection.nonce, id: $this.data( 'id' ) },
+			success: function ( response ) { $this.text( response.new_text ); },
+			error: function ( error ) { window.alert( typeof error === 'string' ? error : postCollection.transferError ); },
+			complete: function () { $this.data( 'loading', false ); }
 		} );
 		return false;
 	} );

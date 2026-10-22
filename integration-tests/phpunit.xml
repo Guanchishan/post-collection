@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<phpunit bootstrap="bootstrap.php" colors="true" failOnWarning="true">
+  <testsuites><testsuite name="Real WordPress migration and Friends transfers"><file>MigrationTransferTest.php</file></testsuite></testsuites>
+</phpunit>

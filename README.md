@@ -51,6 +51,12 @@ The plugin also registers WordPress Abilities (listing, creating and updating co
 
 ## Installation
 
+Upgrading from Friends Post Collection 1.x or the user-backed 2.0.0 release?
+Back up first, deactivate the old copy, and open the site's admin after updating.
+Legacy collections migrate in resumable batches to the current taxonomy-backed
+format, preserving article IDs and private settings. See [UPGRADING.md](UPGRADING.md)
+for the migration, Friends move/copy/undo behavior, recovery and test instructions.
+
 1. Upload the `post-collection` directory to the `/wp-content/plugins/` directory
 1. Activate the plugin through the 'Plugins' menu in WordPress
 1. Visit `/post-collection/` on your site to create your first collection
@@ -86,6 +92,10 @@ Yes. Every collection can be exported as a Bookmarks HTML file or as OPML, and t
 ## Changelog
 
 ### Unreleased
+
+- Migrate user-backed 1.x/2.0.0 collections to the current format in resumable, site-local batches, preserving article IDs, source information, tags and private settings.
+- Preserve stored article data when moving/copying from Friends, support undoing moves from the standalone app, and retain the source on duplicate or failed transfers.
+- Recover invalid legacy default-account settings and keep private collection articles inaccessible through the detail lookup helper.
 - Tick off several articles in a collection or in the review queue and set their reading status in one go
 - Add e-reader actions to the app when the Send to E-Reader plugin is active: download a single article as ePub, tick off several and send them as one, and pull the unread ones from the e-reader over a download URL
 - Add Bookmarks HTML and OPML export for collections, and OPML import

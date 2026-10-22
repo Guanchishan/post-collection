@@ -111,12 +111,11 @@ class User extends \WP_User {
 		// Posts and revisions should be associated with this user.
 		wp_set_current_user( $this->ID );
 
-		$post = wp_insert_post( $postarr, $wp_error, $fire_after_hooks );
-
-		if ( $current_user ) {
-			wp_set_current_user( $current_user->ID );
+		try {
+			$postarr['post_author'] = $this->ID;
+			return wp_insert_post( $postarr, $wp_error, $fire_after_hooks );
+		} finally {
+			wp_set_current_user( $current_user ? $current_user->ID : 0 );
 		}
-
-		return $post;
 	}
 }

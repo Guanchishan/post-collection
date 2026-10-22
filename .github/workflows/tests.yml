@@ -1,0 +1,54 @@
+name: Migration and Friends transfer tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3']
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: disposable-test-only
+          MARIADB_DATABASE: post_collection_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, dom, mbstring
+          tools: composer
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction
+      - name: Unit suite
+        run: composer test
+      - name: Prepare disposable WordPress and Friends source
+        run: |
+          curl -fsSL https://wordpress.org/latest.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          curl -fsSL https://downloads.wordpress.org/plugin/friends.4.4.0.zip -o "$RUNNER_TEMP/friends.zip"
+          unzip -q "$RUNNER_TEMP/friends.zip" -d "$RUNNER_TEMP"
+      - name: Single site and multisite integration
+        env:
+          PC_TEST_DISPOSABLE: '1'
+          PC_TEST_WP_ROOT: ${{ runner.temp }}/wordpress
+          PC_TEST_DB_HOST: 127.0.0.1
+          PC_TEST_FRIENDS_PLUGIN: ${{ runner.temp }}/friends/friends.php
+        run: |
+          php vendor/bin/phpunit -c integration-tests/phpunit.xml
+          php integration-tests/install-network.php
+          PC_TEST_MULTISITE=1 php vendor/bin/phpunit -c integration-tests/phpunit.xml

@@ -15,6 +15,7 @@ phpunit.xml.dist export-ignore
 phpcs.xml export-ignore
 phpcs.xml.dist export-ignore
 tests export-ignore
+integration-tests export-ignore
 bin export-ignore
 
 # Build/Dev

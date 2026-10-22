@@ -15,6 +15,9 @@ defined( 'ABSPATH' ) || exit;
 use Friends\Friends;
 use WP_HTML_Tag_Processor;
 
+require_once __DIR__ . '/includes/class-collection-migration.php';
+require_once __DIR__ . '/includes/class-collection-transfer.php';
+
 /**
  * This is the class for the downloading and storing posts.
  *
@@ -26,6 +29,25 @@ use WP_HTML_Tag_Processor;
 class Post_Collection {
 	const CPT = 'collected_post';
 	const COLLECTION_TAXONOMY = 'post_collection';
+
+	/** Recount retained term relationships after changing a post type directly. */
+	public static function refresh_post_term_counts( $post_id ) {
+		foreach ( array( 'friend_post_cache', 'post_collection', self::CPT ) as $type ) {
+			wp_cache_delete( _count_posts_cache_key( $type ), 'counts' );
+			wp_cache_delete( _count_posts_cache_key( $type, 'readable' ), 'counts' );
+		}
+		$terms = wp_get_object_terms( $post_id, get_taxonomies() );
+		if ( is_wp_error( $terms ) ) {
+			return;
+		}
+		$groups = array();
+		foreach ( $terms as $term ) {
+			$groups[ $term->taxonomy ][] = (int) $term->term_taxonomy_id;
+		}
+		foreach ( $groups as $taxonomy => $ids ) {
+			wp_update_term_count_now( $ids, $taxonomy );
+		}
+	}
 
 	/**
 	 * Nonce action for the frontend admin-ajax endpoints.
@@ -287,11 +309,15 @@ class Post_Collection {
 		add_action( 'friends_after_register_feed_taxonomy', array( $this, 'after_register_feed_taxonomy' ) );
 		add_filter( 'my_apps_plugins', array( $this, 'my_apps_plugins' ) );
 		add_action( 'admin_init', array( $this, 'register_launcher_settings' ) );
+		add_action( 'admin_init', array( $this, 'maybe_upgrade_collections' ) );
+		add_action( 'post_collection_upgrade', array( $this, 'upgrade_collections' ) );
+		add_action( 'admin_notices', array( $this, 'migration_notice' ) );
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'wp_ajax_post-collection-mark-publish', array( $this, 'wp_ajax_mark_publish' ) );
 		add_action( 'wp_ajax_post-collection-mark-private', array( $this, 'wp_ajax_mark_private' ) );
 		add_action( 'wp_ajax_post-collection-change-author', array( $this, 'wp_ajax_change_author' ) );
 		add_action( 'wp_ajax_post-collection-save-to-collection', array( $this, 'wp_ajax_save_to_collection' ) );
+		add_action( 'wp_ajax_post-collection-restore-transfer', array( $this, 'wp_ajax_restore_transfer' ) );
 		add_action( 'wp_ajax_post-collection-fetch-full-content', array( $this, 'wp_ajax_fetch_full_content' ) );
 		add_action( 'wp_ajax_post-collection-download-images', array( $this, 'wp_ajax_download_images' ) );
 		add_action( 'wp_ajax_post-collection-re-extract', array( $this, 'wp_ajax_re_extract' ) );
@@ -309,6 +335,17 @@ class Post_Collection {
 	 */
 	public function register_custom_post_type() {
 		$this->register_collection_taxonomy();
+		$tag_taxonomy = $this->get_tag_taxonomy();
+		if ( ! taxonomy_exists( $tag_taxonomy ) ) {
+			register_taxonomy( $tag_taxonomy, self::CPT, array(
+				'label' => __( 'Tags', 'post-collection' ),
+				'public' => false,
+				'show_ui' => true,
+				'show_in_rest' => is_user_logged_in(),
+				'hierarchical' => false,
+				'rewrite' => false,
+			) );
+		}
 
 		$labels = array(
 			'name'               => __( 'Collected Posts', 'post-collection' ),
@@ -413,6 +450,11 @@ class Post_Collection {
 		$author_attr             = $user_id;
 		$is_post_collection_user = $this->is_post_collection_user( $user_id );
 		$is_collected_post       = $post && self::CPT === $post->post_type;
+		if ( $is_collected_post && get_post_meta( $post->ID, Collection_Transfer::HISTORY, true ) ) {
+			?>
+			<li class="menu-item"><a href="#" data-id="<?php echo esc_attr( $post->ID ); ?>" class="post-collection-restore-transfer"><?php esc_html_e( 'Undo last move', 'post-collection' ); ?></a></li>
+			<?php
+		}
 
 		if ( $is_collected_post && $is_post_collection_user ) {
 			echo wp_kses( $divider, $list_tags );
@@ -559,6 +601,8 @@ class Post_Collection {
 				'postCollection',
 				array(
 					'nonce' => wp_create_nonce( self::AJAX_NONCE ),
+					'undo' => __( 'Undo last move', 'post-collection' ),
+					'transferError' => __( 'The article could not be transferred. Please reload and try again.', 'post-collection' ),
 				)
 			);
 		}
@@ -3565,64 +3609,33 @@ class Post_Collection {
 		);
 	}
 
+	/** Compatibility endpoint for older Friends menus; current menus use terms. */
 	function wp_ajax_change_author() {
 		check_ajax_referer( self::AJAX_NONCE );
-
 		if ( ! current_user_can( $this->get_required_role() ) ) {
-			wp_send_json_error( 'error' );
+			wp_send_json_error( __( 'Sorry, you are not allowed to do that.', 'post-collection' ) );
 		}
-
-		$new_author = new User( isset( $_POST['author'] ) ? absint( wp_unslash( $_POST['author'] ) ) : 0 );
-		if ( is_wp_error( $new_author ) ) {
-			wp_send_json_error( 'error' );
+		$id = isset( $_POST['id'] ) ? absint( wp_unslash( $_POST['id'] ) ) : 0;
+		$author = User::get_user_by_id( isset( $_POST['author'] ) ? absint( wp_unslash( $_POST['author'] ) ) : 0 );
+		$post = get_post( $id );
+		if ( ! $author || ! $post ) {
+			wp_send_json_error( __( 'Invalid article or account.', 'post-collection' ) );
 		}
-		if ( ! User::is_friends_plugin_user( $new_author ) && ! $new_author->has_cap( 'post_collection' ) ) {
-			wp_send_json_error( 'error' );
-		}
-
-		$originalauthor = User::get_user_by_id( isset( $_POST['originalauthor'] ) ? absint( wp_unslash( $_POST['originalauthor'] ) ) : 0 );
-		$new_text = __( 'Undo' ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain
-
-		$post = get_post( isset( $_POST['id'] ) ? absint( wp_unslash( $_POST['id'] ) ) : 0 );
-		if ( ! $post ) {
-			wp_send_json_error( 'error' );
-		}
-
-		$old_author = User::get_post_author( $post );
-
-		$post->post_author = $new_author->ID;
-		if ( $new_author->has_cap( 'post_collection' ) ) {
-			$post->post_type   = self::CPT;
-			$post->post_status = 'private';
-		}
-		if ( get_user_option( 'friends_post_collection_copy_mode', $new_author->ID ) ) {
-			unset( $post->ID );
-			$new_author->insert_post( (array) $post );
-			$new_text = sprintf(
-				// translators: %s is the name of a post collection.
-				_x( 'Copied to %s!', 'post-collection', 'post-collection' ),
-				$new_author->display_name
-			);
+		if ( $author->has_cap( 'post_collection' ) ) {
+			$term = Collection_Migration::collection_for_user( $author );
+			$result = is_wp_error( $term ) ? $term : Collection_Transfer::save( $id, $term, (bool) get_user_option( 'friends_post_collection_copy_mode', $author->ID ) );
 		} else {
-			$new_author->insert_post( (array) $post );
-			if ( class_exists( 'Friends\Subscription' ) && $old_author instanceof \Friends\Subscription ) {
-				wp_remove_object_terms( $post->ID, $old_author->get_term_id(), 'friend-subscription' );
+			$history = get_post_meta( $id, Collection_Transfer::HISTORY, true );
+			$state = is_array( $history ) && $history ? end( $history ) : false;
+			if ( ! $state || (int) $state['post_author'] !== (int) $author->ID ) {
+				wp_send_json_error( __( 'The original article account could not be verified.', 'post-collection' ) );
 			}
-			if ( $new_author->ID !== $originalauthor->ID ) {
-				$new_text = sprintf(
-					// translators: %s is the name of a post collection.
-					_x( 'Moved to %s!', 'post-collection', 'post-collection' ),
-					$new_author->display_name
-				);
-			}
+			$result = Collection_Transfer::restore( $id );
 		}
-
-		wp_send_json_success(
-			array(
-				'new_text'   => $new_text,
-				'old_author' => $old_author->ID,
-			)
-		);
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( $result->get_error_message() );
+		}
+		wp_send_json_success( array( 'post_id' => is_array( $result ) ? $result['post_id'] : $result, 'old_author' => (int) $post->post_author, 'new_text' => __( 'Article transferred. Reload to see the result.', 'post-collection' ) ) );
 	}
 
 	function wp_ajax_save_to_collection() {
@@ -3646,41 +3659,38 @@ class Post_Collection {
 			wp_send_json_error( __( 'This post collection is inactive.', 'post-collection' ) );
 		}
 
-		$url = $post->guid;
-		if ( ! $this->check_url( $url ) ) {
-			$url = get_permalink( $post );
-		}
-
-		$post_id = $this->save_url_to_collection_term(
-			$url,
-			$collection,
-			$post->post_content,
-			array(
-				'title'          => $post->post_title,
-				'return_details' => true,
-			)
-		);
-
-		if ( is_wp_error( $post_id ) ) {
-			wp_send_json_error( $post_id->get_error_message() );
-		}
-
-		$save_details = $post_id;
 		$copy_mode    = (bool) get_term_meta( $collection->term_id, 'friends_post_collection_copy_mode', true );
-		if ( ! $copy_mode && self::CPT !== $post->post_type ) {
-			wp_trash_post( $post->ID );
+		$save_details = Collection_Transfer::save( $post->ID, $collection, $copy_mode );
+		if ( is_wp_error( $save_details ) ) {
+			wp_send_json_error( $save_details->get_error_message() );
 		}
 
 		wp_send_json_success(
 			array(
 				'post_id'  => $save_details['post_id'],
-				'new_text' => sprintf(
+				'can_undo' => $save_details['moved'],
+				'duplicate' => $save_details['duplicate'],
+				'new_text' => $save_details['duplicate'] ? __( 'This article is already in the collection; the source was kept.', 'post-collection' ) : sprintf(
 					// translators: %s is the name of a post collection.
 					$copy_mode ? _x( 'Copied to %s!', 'post-collection', 'post-collection' ) : _x( 'Moved to %s!', 'post-collection', 'post-collection' ),
 					$collection->name
 				),
 			)
 		);
+	}
+
+	/** Undo a move using its stored state, never client-supplied author/type data. */
+	public function wp_ajax_restore_transfer() {
+		check_ajax_referer( self::AJAX_NONCE );
+		if ( ! current_user_can( $this->get_required_role() ) ) {
+			wp_send_json_error( __( 'Sorry, you are not allowed to do that.', 'post-collection' ) );
+		}
+		$id = isset( $_POST['id'] ) ? absint( wp_unslash( $_POST['id'] ) ) : 0;
+		$result = Collection_Transfer::restore( $id );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( $result->get_error_message() );
+		}
+		wp_send_json_success( array( 'post_id' => $result, 'new_text' => __( 'Move undone. Reload to see the restored article.', 'post-collection' ) ) );
 	}
 
 	function wp_ajax_fetch_full_content() {
@@ -4024,10 +4034,24 @@ class Post_Collection {
 	private static function setup_default_user() {
 		$default_user_id = get_option( 'post-collection_default_user' );
 		$default_user = false;
-		if ( $default_user_id ) {
+		if ( is_numeric( $default_user_id ) && $default_user_id > 0 ) {
 			$default_user = new \WP_User( $default_user_id );
-			if ( ! $default_user->exists() ) {
+			if ( ! $default_user->exists() || ! $default_user->has_cap( 'post_collection' ) ) {
 				$default_user = false;
+			}
+		}
+		if ( ! $default_user ) {
+			$legacy_id = get_option( 'friends-post-collection_default_user' );
+			$legacy = is_numeric( $legacy_id ) ? get_user_by( 'ID', (int) $legacy_id ) : false;
+			if ( $legacy && $legacy->has_cap( 'post_collection' ) ) {
+				$default_user = $legacy;
+			} else {
+				$users = new \WP_User_Query( array( 'role' => 'post_collection', 'orderby' => 'ID', 'order' => 'ASC', 'number' => 1 ) );
+				$existing = $users->get_results();
+				$default_user = $existing ? reset( $existing ) : false;
+			}
+			if ( $default_user ) {
+				update_option( 'post-collection_default_user', (int) $default_user->ID );
 			}
 		}
 		if ( ! $default_user ) {
@@ -4038,7 +4062,43 @@ class Post_Collection {
 				'role'         => 'post_collection',
 			);
 			$user_id = wp_insert_user( $userdata );
-			update_option( 'post-collection_default_user', $user_id );
+			if ( ! is_wp_error( $user_id ) && $user_id ) {
+				update_option( 'post-collection_default_user', (int) $user_id );
+			}
+		}
+	}
+
+	/** Upgrade on ordinary plugin updates too, not just activation. */
+	public function maybe_upgrade_collections() {
+		if ( current_user_can( 'activate_plugins' ) && Collection_Migration::VERSION !== (int) get_option( Collection_Migration::OPTION ) ) {
+			self::setup();
+			$this->upgrade_collections();
+		}
+	}
+
+	/** Cron events are site-local, as are the cursor, lock and schema version. */
+	public function upgrade_collections() {
+		$result = Collection_Migration::run();
+		if ( is_wp_error( $result ) ) {
+			update_option( 'post_collection_migration_error', $result->get_error_message(), false );
+			return;
+		}
+		delete_option( 'post_collection_migration_error' );
+		if ( ! $result && ! wp_next_scheduled( 'post_collection_upgrade' ) ) {
+			wp_schedule_single_event( time() + 10, 'post_collection_upgrade' );
+		}
+	}
+
+	/** Show a retryable failure rather than silently reporting a completed upgrade. */
+	public function migration_notice() {
+		if ( ! current_user_can( 'activate_plugins' ) ) {
+			return;
+		}
+		$error = get_option( 'post_collection_migration_error' );
+		if ( $error ) {
+			echo '<div class="notice notice-error"><p>' . esc_html( $error ) . '</p></div>';
+		} elseif ( Collection_Migration::VERSION !== (int) get_option( Collection_Migration::OPTION ) ) {
+			echo '<div class="notice notice-info"><p>' . esc_html__( 'Post Collection is upgrading legacy collections in batches. Existing articles are retained; the upgrade continues on the next request or scheduled run.', 'post-collection' ) . '</p></div>';
 		}
 	}
 
