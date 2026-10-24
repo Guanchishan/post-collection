@@ -66,7 +66,7 @@ class Collection_Migration {
 							return $terms;
 						}
 						if ( Post_Collection::CPT !== $post->post_type || ! $terms ) {
-							$result = wp_set_object_terms( $id, array( (int) $term->term_id ), Post_Collection::COLLECTION_TAXONOMY, true );
+							$result = Collection_Storage::set_terms( $id, array( (int) $term->term_id ), Post_Collection::COLLECTION_TAXONOMY, true );
 							if ( is_wp_error( $result ) ) {
 								return $result;
 							}
@@ -123,7 +123,7 @@ class Collection_Migration {
 				}
 				$target = get_term( $created['term_id'], $taxonomy );
 			}
-			$result = wp_set_object_terms( $post_id, array( (int) $target->term_id ), $taxonomy, true );
+			$result = Collection_Storage::set_terms( $post_id, array( (int) $target->term_id ), $taxonomy, true );
 			if ( is_wp_error( $result ) ) {
 				return $result;
 			}
@@ -173,9 +173,10 @@ class Collection_Migration {
 		foreach ( array( 'friends_publish_post_collection', 'friends_post_collection_inactive', 'friends_post_collection_copy_mode', 'post_collection_frontend_mode', 'post_collection_frontend_view', 'post_collection_hide_from_home' ) as $key ) {
 			$value = get_user_option( $key, $user->ID );
 			if ( 'friends_publish_post_collection' === $key ) {
-				$value = is_scalar( $value ) && rest_sanitize_boolean( $value );
+				// Only documented legacy true values may publish a collection.
+				$value = true === $value || 1 === $value || ( is_string( $value ) && in_array( strtolower( trim( $value ) ), array( '1', 'true' ), true ) );
 			}
-			if ( false !== $value ) {
+			if ( false !== $value || 'friends_publish_post_collection' === $key ) {
 				$saved = update_term_meta( $id, $key, $value );
 				if ( is_wp_error( $saved ) || ( false === $saved && get_term_meta( $id, $key, true ) != $value ) ) {
 					return new \WP_Error( 'collection_settings_failed', __( 'Could not migrate collection settings.', 'post-collection' ) );

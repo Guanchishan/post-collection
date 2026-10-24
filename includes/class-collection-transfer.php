@@ -83,11 +83,12 @@ class Collection_Transfer {
 			$history = get_post_meta( $id, self::HISTORY, true );
 			$history = is_array( $history ) ? $history : array();
 			$history[] = $state;
-			if ( ! update_post_meta( $id, self::HISTORY, $history ) ) {
-				return new \WP_Error( 'collection_transfer_state_failed', __( 'Could not save the original article state.', 'post-collection' ) );
+			$saved = Collection_Storage::set_history( $id, $history );
+			if ( is_wp_error( $saved ) ) {
+				return $saved;
 			}
 		}
-		$result = wp_set_object_terms( $id, array( (int) $collection->term_id ), Post_Collection::COLLECTION_TAXONOMY );
+		$result = Collection_Storage::set_terms( $id, array( (int) $collection->term_id ), Post_Collection::COLLECTION_TAXONOMY );
 		if ( ! is_wp_error( $result ) ) {
 			$result = self::update_fields( $id, array( 'post_type' => Post_Collection::CPT, 'post_status' => 'private' ) );
 		}
@@ -97,9 +98,11 @@ class Collection_Transfer {
 			} else {
 				// The type/status update is atomic; restore terms and remove only this
 				// failed operation's history entry so an older undo remains available.
-				wp_set_object_terms( $id, $state['terms'], Post_Collection::COLLECTION_TAXONOMY );
 				array_pop( $history );
-				update_post_meta( $id, self::HISTORY, $history );
+				$rollback = self::restore_bookkeeping( $id, $state['terms'], $history );
+				if ( is_wp_error( $rollback ) ) {
+					return $rollback;
+				}
 			}
 			return $result;
 		}
@@ -145,17 +148,36 @@ class Collection_Transfer {
 				return new \WP_Error( 'collection_source_missing', __( 'The original collection no longer exists.', 'post-collection' ) );
 			}
 		}
-		$result = wp_set_object_terms( $post_id, $state['terms'], Post_Collection::COLLECTION_TAXONOMY );
+		// Save the shorter stack first. If this fails, neither terms nor post fields
+		// have changed, so even consecutive moves remain safe to retry.
+		$original_history = get_post_meta( $post_id, self::HISTORY, true );
+		$result = Collection_Storage::set_history( $post_id, $history );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
-		$result = self::update_fields( $post_id, array( 'post_type' => $state['post_type'], 'post_status' => $state['post_status'], 'post_author' => $state['post_author'] ) );
-		if ( is_wp_error( $result ) ) {
-			wp_set_object_terms( $post_id, $terms, Post_Collection::COLLECTION_TAXONOMY );
-			return $result;
+		$result = Collection_Storage::set_terms( $post_id, $state['terms'], Post_Collection::COLLECTION_TAXONOMY );
+		if ( ! is_wp_error( $result ) ) {
+			$result = self::update_fields( $post_id, array( 'post_type' => $state['post_type'], 'post_status' => $state['post_status'], 'post_author' => $state['post_author'] ) );
 		}
-		update_post_meta( $post_id, self::HISTORY, $history );
+		if ( is_wp_error( $result ) ) {
+			$rollback = self::restore_bookkeeping( $post_id, $terms, $original_history );
+			return is_wp_error( $rollback ) ? $rollback : $result;
+		}
 		return (int) $post_id;
+	}
+
+	/** Compensate a failed move/undo, and never hide a failed compensation. */
+	private static function restore_bookkeeping( $post_id, array $terms, array $history ) {
+		$term_result = Collection_Storage::set_terms( $post_id, $terms, Post_Collection::COLLECTION_TAXONOMY );
+		$history_result = Collection_Storage::set_history( $post_id, $history );
+		if ( is_wp_error( $term_result ) || is_wp_error( $history_result ) ) {
+			return new \WP_Error(
+				'collection_transfer_recovery_required',
+				__( 'The move failed and its saved state could not be fully restored. Review this article before retrying.', 'post-collection' ),
+				array( 'post_id' => (int) $post_id )
+			);
+		}
+		return true;
 	}
 
 	/** Update only transfer fields, without republishing or changing article dates. */
@@ -196,7 +218,7 @@ class Collection_Transfer {
 				continue;
 			}
 			$terms = wp_get_object_terms( $post->ID, $taxonomy, array( 'fields' => 'ids' ) );
-			$result = is_wp_error( $terms ) ? $terms : wp_set_object_terms( $id, array_map( 'intval', $terms ), $taxonomy );
+			$result = is_wp_error( $terms ) ? $terms : Collection_Storage::set_terms( $id, array_map( 'intval', $terms ), $taxonomy );
 			if ( is_wp_error( $result ) ) {
 				wp_delete_post( $id, true );
 				return $result;

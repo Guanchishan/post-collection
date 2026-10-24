@@ -15,6 +15,7 @@ defined( 'ABSPATH' ) || exit;
 use Friends\Friends;
 use WP_HTML_Tag_Processor;
 
+require_once __DIR__ . '/includes/class-collection-storage.php';
 require_once __DIR__ . '/includes/class-collection-migration.php';
 require_once __DIR__ . '/includes/class-collection-transfer.php';
 

@@ -376,4 +376,194 @@ class MigrationTransferTest extends TestCase {
 		$this->assertSame( (int) $owner->ID, (int) get_post( $id )->post_author );
 		$this->assertSame( 1, get_current_user_id() );
 	}
+
+	private function fail_relationship_writes( $operation ) {
+		global $wpdb;
+		return function ( $query ) use ( $wpdb, $operation ) {
+			$pattern = '/^\s*' . $operation . '\s+(?:INTO\s+|FROM\s+)?[' . chr( 96 ) . ']?' . preg_quote( $wpdb->term_relationships, '/' ) . '\b/i';
+			return preg_match( $pattern, $query ) ? 'INSERT INTO deliberately_missing_test_relationship_table VALUES (1)' : $query;
+		};
+	}
+
+	public function test_migration_relationship_failure_is_retryable() {
+		global $wpdb;
+		$owner = $this->owner();
+		$id = $this->article( 'friend_post_cache', $owner->ID );
+		$fail = $this->fail_relationship_writes( 'INSERT' );
+		$old = $wpdb->suppress_errors( true );
+		add_filter( 'query', $fail );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Migration::run() );
+		} finally {
+			remove_filter( 'query', $fail );
+			$wpdb->suppress_errors( $old );
+		}
+		$this->assertSame( 'friend_post_cache', get_post_type( $id ) );
+		$this->assertNotSame( Migration::VERSION, (int) get_option( Migration::OPTION ) );
+		$state = get_option( Migration::STATE, array() );
+		$this->assertEmpty( $state[ $owner->ID ] ?? null );
+		$this->assertTrue( Migration::run() );
+		$term = Migration::collection_for_user( $owner );
+		$this->assertTrue( has_term( $term->term_id, Plugin::COLLECTION_TAXONOMY, $id ) );
+	}
+
+	/** @dataProvider transfer_modes */
+	public function test_transfer_relationship_failure_preserves_source( $copy ) {
+		global $wpdb;
+		$id = $this->article( 'friend_post_cache', 1 );
+		$before = get_post( $id, ARRAY_A );
+		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts}" );
+		$term = $this->collection();
+		$fail = $this->fail_relationship_writes( 'INSERT' );
+		$old = $wpdb->suppress_errors( true );
+		add_filter( 'query', $fail );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Transfer::save( $id, $term, $copy ) );
+		} finally {
+			remove_filter( 'query', $fail );
+			$wpdb->suppress_errors( $old );
+		}
+		$this->assertSame( $before, get_post( $id, ARRAY_A ) );
+		$this->assertSame( $count, (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts}" ) );
+		$this->assertEmpty( get_post_meta( $id, Transfer::HISTORY, true ) );
+		$this->assertFalse( is_wp_error( Transfer::save( $id, $term, $copy ) ) );
+	}
+
+	public static function transfer_modes() {
+		return array( 'move' => array( false ), 'copy' => array( true ) );
+	}
+
+	public function test_undo_relationship_delete_failure_is_retryable() {
+		global $wpdb;
+		$id = $this->article( 'friend_post_cache', 1 );
+		$term = $this->collection();
+		Transfer::save( $id, $term );
+		$history = get_post_meta( $id, Transfer::HISTORY, true );
+		$fail = $this->fail_relationship_writes( 'DELETE' );
+		$old = $wpdb->suppress_errors( true );
+		add_filter( 'query', $fail );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Transfer::restore( $id ) );
+		} finally {
+			remove_filter( 'query', $fail );
+			$wpdb->suppress_errors( $old );
+		}
+		$this->assertSame( Plugin::CPT, get_post_type( $id ) );
+		$this->assertTrue( has_term( $term->term_id, Plugin::COLLECTION_TAXONOMY, $id ) );
+		$this->assertSame( $history, get_post_meta( $id, Transfer::HISTORY, true ) );
+		$this->assertSame( $id, Transfer::restore( $id ) );
+	}
+
+	/** @dataProvider publication_preferences */
+	public function test_only_explicit_publication_preferences_allow_anonymous_access( $value, $expected ) {
+		$owner = $this->owner();
+		if ( null === $value ) {
+			delete_user_option( $owner->ID, 'friends_publish_post_collection' );
+		} else {
+			update_user_option( $owner->ID, 'friends_publish_post_collection', $value );
+		}
+		$id = $this->article( 'post_collection', $owner->ID );
+		$this->assertTrue( Migration::run() );
+		$term = Migration::collection_for_user( $owner );
+		$app = ( new ReflectionClass( PostCollection\Post_Collection_App::class ) )->newInstanceWithoutConstructor();
+		$property = new ReflectionProperty( $app, 'post_collection' );
+		$property->setAccessible( true );
+		$property->setValue( $app, ( new ReflectionClass( Plugin::class ) )->newInstanceWithoutConstructor() );
+		wp_set_current_user( 0 );
+		$this->assertSame( $expected, $app->can_view_collection( $term ) );
+		$this->assertSame( $expected, (bool) $app->get_visible_post( $id, $term ) );
+	}
+
+	public static function publication_preferences() {
+		return array(
+			'missing' => array( null, false ), 'false' => array( false, false ),
+			'zero' => array( 0, false ), 'string zero' => array( '0', false ),
+			'string false' => array( 'false', false ), 'off' => array( 'off', false ),
+			'invalid' => array( 'not-a-boolean', false ), 'array' => array( array( 'true' ), false ),
+			'empty' => array( '', false ), 'other number' => array( 2, false ),
+			'true' => array( true, true ), 'one' => array( 1, true ),
+			'string one' => array( '1', true ), 'string true' => array( 'true', true ),
+			'case insensitive' => array( ' TRUE ', true ),
+		);
+	}
+
+	public function test_private_preference_overwrites_partial_migration_public_flag() {
+		$owner = $this->owner();
+		$term = Migration::collection_for_user( $owner );
+		delete_term_meta( $term->term_id, '_post_collection_settings_migrated' );
+		update_term_meta( $term->term_id, 'friends_publish_post_collection', true );
+		update_user_option( $owner->ID, 'friends_publish_post_collection', 'off' );
+		Migration::collection_for_user( $owner );
+		$this->assertFalse( (bool) get_term_meta( $term->term_id, 'friends_publish_post_collection', true ) );
+	}
+
+	public function test_undo_history_write_failure_keeps_two_moves_retryable() {
+		$id = $this->article( 'friend_post_cache', 1 );
+		$before = get_post( $id, ARRAY_A );
+		$a = $this->collection( 'a' );
+		$b = $this->collection( 'b' );
+		Transfer::save( $id, $a );
+		Transfer::save( $id, $b );
+		$history = get_post_meta( $id, Transfer::HISTORY, true );
+		$fail = function ( $check, $post_id, $key ) {
+			return Transfer::HISTORY === $key ? false : $check;
+		};
+		add_filter( 'update_post_metadata', $fail, 10, 3 );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Transfer::restore( $id ) );
+		} finally {
+			remove_filter( 'update_post_metadata', $fail );
+		}
+		$this->assertTrue( has_term( $b->term_id, Plugin::COLLECTION_TAXONOMY, $id ) );
+		$this->assertSame( $history, get_post_meta( $id, Transfer::HISTORY, true ) );
+		$this->assertSame( $id, Transfer::restore( $id ) );
+		$this->assertSame( $id, Transfer::restore( $id ) );
+		$this->assertSame( $before, get_post( $id, ARRAY_A ) );
+	}
+
+
+	public function test_migration_preserves_legacy_type_until_tags_are_persisted() {
+		global $wpdb;
+		$owner = $this->owner();
+		$id = $this->article( 'friend_post_cache', $owner->ID );
+		wp_set_object_terms( $id, 'legacy-label', 'post_tag' );
+		$fail = $this->fail_relationship_writes( 'INSERT' );
+		$old = $wpdb->suppress_errors( true );
+		add_filter( 'query', $fail );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Migration::run() );
+		} finally {
+			remove_filter( 'query', $fail );
+			$wpdb->suppress_errors( $old );
+		}
+		$this->assertSame( 'friend_post_cache', get_post_type( $id ) );
+		$this->assertTrue( Migration::run() );
+		$this->assertTrue( has_term( 'legacy-label', 'friend_tag', $id ) );
+	}
+
+	public function test_undo_post_write_failure_restores_the_original_history() {
+		global $wpdb;
+		$id = $this->article( 'friend_post_cache', 1 );
+		$a = $this->collection( 'a' );
+		$b = $this->collection( 'b' );
+		Transfer::save( $id, $a );
+		Transfer::save( $id, $b );
+		$history = get_post_meta( $id, Transfer::HISTORY, true );
+		$fail = function ( $query ) use ( $wpdb ) {
+			return false !== strpos( $query, 'UPDATE ' . chr( 96 ) . $wpdb->posts . chr( 96 ) . ' SET ' . chr( 96 ) . 'post_type' ) ? 'UPDATE deliberately_missing_test_table SET post_type = 1' : $query;
+		};
+		$old = $wpdb->suppress_errors( true );
+		add_filter( 'query', $fail );
+		try {
+			$this->assertInstanceOf( WP_Error::class, Transfer::restore( $id ) );
+		} finally {
+			remove_filter( 'query', $fail );
+			$wpdb->suppress_errors( $old );
+		}
+		$this->assertTrue( has_term( $b->term_id, Plugin::COLLECTION_TAXONOMY, $id ) );
+		$this->assertSame( $history, get_post_meta( $id, Transfer::HISTORY, true ) );
+		$this->assertSame( $id, Transfer::restore( $id ) );
+		$this->assertSame( $id, Transfer::restore( $id ) );
+	}
+
 }

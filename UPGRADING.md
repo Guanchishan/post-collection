@@ -1,8 +1,8 @@
 # Legacy collections and Friends transfers
 
-This change targets the current `main` schema: `collected_post` posts grouped by
-`post_collection` taxonomy terms. It does not revert `main` to the 2.0.0 tag's
-user-backed schema. Both Friends Post Collection 1.x (`friend_post_cache`) and
+Collections use `collected_post` posts grouped by `post_collection` taxonomy
+terms. The released 2.0.0 tag used a different, user-backed schema. Both Friends
+Post Collection 1.x (`friend_post_cache`) and
 released Post Collection 2.0.0 (`post_collection`) are upgrade sources.
 
 ## Upgrading an existing installation
@@ -29,8 +29,10 @@ Each legacy account gets its own term, identified by
 `_post_collection_legacy_user_id`. An unrelated same-slug collection is never
 merged into it. Privacy, inactive/copy settings and frontend preferences are
 copied once; subsequent retries do not overwrite settings already migrated.
-Missing/invalid publication preferences stay private. Existing WordPress account
-IDs and per-article `post_author` values are retained. A missing or invalid
+Only explicit legacy true values (`true`, `1`, or the strings `true` and `1`,
+ignoring case and surrounding whitespace) enable public access. Missing or
+invalid publication preferences stay private, including partially migrated
+settings. Existing WordPress account IDs and per-article `post_author` values are retained. A missing or invalid
 default-user option (including an old stored `WP_Error`) is resolved from a valid
 legacy default or an existing collection account before trying to create one.
 
@@ -72,7 +74,9 @@ not network options. Legacy user options/accounts are retained for recovery.
   capability. Undo uses server-side history, not a supplied original author.
   Inactive destinations and unsupported source post types are rejected. Database
   and metadata failures return errors; a failed copy is removed and a failed move
-  retains its source. These operations do not invoke remote extraction services.
+  retains its source. Persisted collection membership and undo history are
+  verified before reporting success. If compensation also fails, an explicit recovery error requires review
+  before retrying. These operations do not invoke remote extraction services.
 
 The original 2.0.0-era change-author AJAX endpoint is retained as a compatibility
 adapter. Current menus use taxonomy terms. Saved articles are managed in the
