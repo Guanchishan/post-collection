@@ -2,8 +2,9 @@
 /**
  * Plugin Name: Post Collection
  * Plugin URI: https://wpapps.kirk.at/apps/post-collection/
+ * Update URI: https://github.com/Guanchishan/post-collection
  * Description: Save articles from around the web, extract readable content, organize them into collections, and review them with notes in WordPress.
- * Version: 2.0.0
+ * Version: 2.0.0-guanchishan.1
  * Requires at least: 6.0
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -26,7 +27,7 @@ namespace PostCollection;
 defined( 'ABSPATH' ) || exit;
 define( 'POST_COLLECTION_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'POST_COLLECTION_PLUGIN_FILE', plugin_dir_path( __FILE__ ) . '/' . basename( __FILE__ ) );
-define( 'POST_COLLECTION_VERSION', '2.0.0' );
+define( 'POST_COLLECTION_VERSION', '2.0.0-guanchishan.1' );
 
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/class-user.php';
