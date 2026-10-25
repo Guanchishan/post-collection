@@ -4,7 +4,7 @@
  * Plugin URI: https://wpapps.kirk.at/apps/post-collection/
  * Update URI: https://github.com/Guanchishan/post-collection
  * Description: Save articles from around the web, extract readable content, organize them into collections, and review them with notes in WordPress.
- * Version: 2.0.0-guanchishan.1
+ * Version: 2.0.0-guanchishan.1+4f0de6358eff
  * Requires at least: 6.0
  * Tested up to: 7.1
  * Requires PHP: 7.4
